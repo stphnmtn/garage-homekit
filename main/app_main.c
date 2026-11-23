@@ -28,6 +28,7 @@
 #include "net.h"
 #include "ota.h"
 #include "setup.h"
+#include "update.h"
 
 static const char *TAG = "garage";
 
@@ -66,6 +67,7 @@ static bool hap_running;
 static int sessions;      // pair-verified HomeKit connections open now
 static int sessions_max;  // highest since boot
 static unsigned pulses;
+static int64_t last_pulse_us = INT64_MIN / 2;
 
 static void post(ev_type_t t, int arg)
 {
@@ -123,6 +125,7 @@ static void door_open(void)
     esp_timer_stop(travel_timer);
     esp_timer_stop(autoclose_timer);
     pulses++;
+    last_pulse_us = esp_timer_get_time();
     io_door_pulse();
     publish_door(DOOR_OPENING, DOOR_OPEN);
     esp_timer_start_once(travel_timer, DOOR_TRAVEL_MS * 1000ULL);
@@ -229,6 +232,14 @@ static void on_hap_event(hap_event_t ev, void *data)
     }
 }
 
+// An update reboots only a quiet garage: door modelled closed, no press for a while.
+// Read from the update task; int-sized reads, a stale value only delays an update.
+static bool idle(void)
+{
+    return door == DOOR_CLOSED
+           && esp_timer_get_time() - last_pulse_us > CONFIG_GARAGE_UPDATE_IDLE_S * 1000000LL;
+}
+
 static int status(char *buf, size_t len)
 {
     static const char *door_names[] = { "open", "closed", "opening", "closing" };
@@ -236,12 +247,12 @@ static int status(char *buf, size_t len)
     return snprintf(buf, len,
                     "version %s\nuptime_s %lld\nreset_reason %d\nheap_free %u\nheap_min %u\n"
                     "hk_sessions %d\nhk_sessions_max %d\nhk_controllers %d\npulses %u\n"
-                    "door %s\ncharger %d\ntemp_c %.1f\n",
+                    "door %s\ncharger %d\ntemp_c %.1f\nupdate %s\n",
                     esp_app_get_description()->version, esp_timer_get_time() / 1000000,
                     esp_reset_reason(), (unsigned)esp_get_free_heap_size(),
                     (unsigned)esp_get_minimum_free_heap_size(), sessions, sessions_max,
                     hap_running ? hap_get_paired_controller_count() : -1, pulses,
-                    door_names[door], charger, t);
+                    door_names[door], charger, t, update_last());
 }
 
 static void hap_setup(void)
@@ -376,6 +387,7 @@ void app_main(void)
             if (!hap_running) {
                 diag_register(ota_start(), status);
                 hap_setup();
+                update_start(idle);
             }
             if (hap_get_paired_controller_count() == 0) {
                 confirm_image();  // nobody to wait for

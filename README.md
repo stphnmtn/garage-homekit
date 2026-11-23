@@ -23,9 +23,9 @@ accepts any image.
 
 - HomeKit (HAP over IP) from Espressif's esp-homekit-sdk, vendored at a pinned commit
   (`components/VENDORED`); our code is `main/` only.
-- Updates: `POST :8032/ota`. ESP-IDF refuses any image not signed with our ECDSA key
-  (Keychain `garage-ota-signing-key`; public key in `keys/`); the firmware refuses older
-  versions. A new image is kept only once a HomeKit controller has connected through it
+- Updates: the device pulls releases itself (see below); `POST :8032/ota` remains for a local
+  push. Either way ESP-IDF refuses any image not signed with our ECDSA key (public key in
+  `keys/`), and the firmware refuses older versions. A new image is kept only once a HomeKit controller has connected through it
   (immediately if nothing is paired); otherwise the bootloader reverts to the previous one,
   after 5 min or at the next reset.
 - Bootloader: the Shelly kept the one from its first serial flash, which ignores rollback
@@ -44,25 +44,35 @@ accepts any image.
     tools/keygen.sh                   one time: signing key + setup code into the Keychain
     tools/build.sh                    build + sign -> build/garage-homekit-signed.bin
     tools/qemu-test.sh                emulator tests: boot, OTA accept/refuse, rollback, bootloader
-                                      replacement, pairing from NVS setup info (no secrets)
-    tools/ota-push.sh                 every later update (bump VERSION first)
+                                      replacement, pairing from NVS setup info, pulled updates (no secrets)
+    tools/ota-push.sh                 local push, when GitHub is not an option
 
-Losing the signing key means the next update needs a serial cable; keep a copy off the Mac. `tools/build.sh` refuses to sign with a
-key that does not match `keys/ota_verify.bin`.
+Losing the signing key means the next update needs a serial cable; keep a copy off the Mac.
+`tools/build.sh` and `tools/sign.py` refuse a key that does not match `keys/ota_verify.bin`.
 
-## CI and updates
+## CI, releases, updates
 
 - `ci.yml` (push, pull request, manual): device build, then the emulator suite in the
-  `espressif/idf` image named in `IDF_VERSION`. It uses a throwaway key and setup code: the
-  signing key and the real setup code never leave the Mac.
+  `espressif/idf` image named in `IDF_VERSION`, with a throwaway key and setup code.
+- Release: bump `VERSION`, commit, push the tag `vN`. `release.yml` builds and tests, then
+  waits for the owner's approval in the `release` environment (GitHub app or web), signs with
+  the environment secret `OTA_SIGNING_KEY` (base64 PEM, the same key as the Keychain's) using
+  `tools/sign.py` (openssl only), and publishes `version.txt` + `garage-homekit-signed.bin`.
+- The device checks `releases/latest/download/version.txt` hourly. A newer version installs
+  between 01:00 and 03:00 UTC (hour from the server's Date header; the device has no clock),
+  only when the door is modelled closed and was not pressed for 10 min, and it reboots only
+  under the same condition. The new image must then pass the HomeKit confirmation, or it is
+  rolled back. Certificate expiry is not checked (no clock): the signature is what is trusted.
+  Whether the charger relay drops during the reboot (a few seconds at most) is untested.
+- Anyone who controls the GitHub account can sign: protect it with a passkey or 2FA.
 - Espressif updates are applied by hand: bump `IDF_VERSION`, re-vendor `components/` from
   esp-homekit-sdk (record the commit in `components/VENDORED`), `idf.py update-dependencies`.
-- Deploying stays manual: merge, then on the Mac `git pull && tools/build.sh && tools/ota-push.sh`.
 
 ## Diagnostics
 
 `curl http://garage.local:8032/status` (uptime, reset reason, heap, open HomeKit sessions and
-their peak, paired controllers, presses since boot, door model, charger, temperature) and
+their peak, paired controllers, presses since boot, door model, charger, temperature, last
+update check) and
 `curl http://garage.local:8032/log` (last 8 KB of log lines, timestamps in ms since boot).
 Both live in RAM only: nothing is logged to flash, and a reboot clears them. The only flash
 writes are the charger state on change, HomeKit pairing changes, the setup info when a local

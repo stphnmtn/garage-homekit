@@ -17,6 +17,7 @@ while True:
     if len(set(d)) > 1 and d not in ("12345678", "87654321"):
         break
 print(f"{d[:3]}-{d[3:5]}-{d[5:]}")')
+rm -f main/secrets.h  # a real one left by tools/build.sh would end up in every test image
 trap 'rm -f main/secrets.h' EXIT
 
 build() {  # $1 = version, $2 = 1 for an image that never confirms itself
@@ -38,15 +39,21 @@ idf.py -B "$B-oldbl" -D SDKCONFIG="$B-oldbl.sdkconfig" \
 rm -f "$B-oldbl.sdkconfig"
 build "$((V + 1))"
 build "$((V + 2))" 1
+build "$((V + 3))"
 echo "$SETUP_CODE/TEST" | python3 tools/setup_info.py main/secrets.h
 build "$V"
 rm -f main/secrets.h
+for v in "$((V + 1))" "$((V + 2))" "$((V + 3))"; do
+  strings "$B/v$v-unsigned.bin" | grep -q "setup info written" && { echo "FAIL: v$v carries setup info"; exit 1; }
+done
 for v in "$V" "$((V + 1))"; do  # the code never enters an image, not even a provisioning one
   strings "$B/v$v-unsigned.bin" | grep -q "$SETUP_CODE" && { echo "FAIL: setup code in v$v"; exit 1; }
 done
 espsecure.py generate_signing_key --version 1 /tmp/other.pem >/dev/null
 espsecure.py sign_data --version 1 --keyfile /tmp/other.pem \
   --output "$B/v$((V + 1))-foreign.bin" "$B/v$((V + 1))-unsigned.bin" >/dev/null
+espsecure.py sign_data --version 1 --keyfile /tmp/other.pem \
+  --output "$B/v$((V + 3))-foreign.bin" "$B/v$((V + 3))-unsigned.bin" >/dev/null
 
 esptool.py --chip esp32 merge_bin --fill-flash-size 4MB -o "$B/flash.bin" \
   0x1000 "$B-oldbl/bootloader/bootloader.bin" 0x8000 "$B/partition_table/partition-table.bin" \
@@ -144,4 +151,32 @@ echo "ok   rolled back to v$((V + 1))"
 
 echo "== a build without secrets pairs from the setup info in NVS"
 python tools/hap_test.py 127.0.0.1 18080 "$SETUP_CODE" --repair
+
+wait_status() {  # $1 = regex on the update line, $2 = log
+  for _ in $(seq 1 240); do
+    u=$(curl -s --max-time 2 http://127.0.0.1:18032/status | grep "^update " || true)
+    echo "$u" | grep -qE "$1" && return 0
+    sleep 1
+  done
+  echo "FAIL: update status never matched '$1' (last: '$u')"; tail -n 30 "$2"; exit 1
+}
+echo "== pull: the device fetches releases itself (served here over HTTP, any hour)"
+mkdir -p "$B/www"; echo "$((V + 3))" > "$B/www/version.txt"
+cp "$B/v$((V + 3))-foreign.bin" "$B/www/garage-homekit-signed.bin"
+python3 -m http.server 8000 --bind 127.0.0.1 --directory "$B/www" > "$B/www.log" 2>&1 &
+WPID=$!
+trap 'kill $QPID $WPID 2>/dev/null || true; rm -f main/secrets.h' EXIT
+wait_status "refused" "$B/qemu5.log"
+echo "ok   foreign-signed release refused: $u"
+cp "$B/v$((V + 3))-signed.bin" "$B/www/garage-homekit-signed.bin"
+wait_status "v$((V + 3)) installed" "$B/qemu5.log"
+echo "ok   $u"
+power_cycle "$B/qemu6.log"
+wait_version "$((V + 3))"
+python tools/hap_test.py 127.0.0.1 18080 "$SETUP_CODE" --reuse
+sleep 2
+grep -q "image confirmed" "$B/qemu6.log" && echo "ok   pulled v$((V + 3)) confirmed" \
+  || { echo "FAIL: pulled image not confirmed"; exit 1; }
+wait_status "up to date" "$B/qemu6.log"
+echo "ok   $u"
 echo "ALL TESTS PASSED"

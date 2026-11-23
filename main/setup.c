@@ -1,5 +1,6 @@
 #include "setup.h"
 
+#include <stdint.h>
 #include <string.h>
 #include <esp_log.h>
 #include <nvs.h>

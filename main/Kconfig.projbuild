@@ -3,4 +3,24 @@ menu "Garage"
         bool "Build for the QEMU emulator (OpenCores Ethernet instead of LAN8720)"
         default n
         select ETH_USE_OPENETH
+
+    config GARAGE_UPDATE_URL
+        string "Base URL of the latest release (version.txt, garage-homekit-signed.bin)"
+        default "https://github.com/stphnmtn/garage-homekit/releases/latest/download"
+
+    config GARAGE_UPDATE_INTERVAL_S
+        int "Seconds between update checks"
+        default 3600
+
+    config GARAGE_UPDATE_HOUR_FROM
+        int "Install only from this UTC hour (server Date header)"
+        default 1
+
+    config GARAGE_UPDATE_HOUR_TO
+        int "... until this UTC hour (exclusive)"
+        default 3
+
+    config GARAGE_UPDATE_IDLE_S
+        int "Install only when the door has not been pressed for this long"
+        default 600
 endmenu

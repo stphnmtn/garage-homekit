@@ -1,0 +1,60 @@
+name: release
+# Push a tag vN (N = VERSION) -> build + emulator tests -> wait for approval -> sign -> publish
+# the release the Shelly pulls (version.txt + garage-homekit-signed.bin).
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Tag matches VERSION
+        run: test "$GITHUB_REF_NAME" = "v$(cat VERSION)"
+      - name: Free disk for the ESP-IDF image (~14 GB unpacked)
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+      - name: Device build (no secrets)
+        run: |
+          docker run --rm -v "$PWD":/project -w /project "espressif/idf:$(cat IDF_VERSION)" idf.py --no-ccache build
+          ls -l build/garage-homekit.bin
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: image
+          path: build/garage-homekit.bin
+          if-no-files-found: error
+      - name: Emulator tests (throwaway key and setup code)
+        run: tools/qemu-test.sh
+
+  # The only job that sees the key: it runs openssl and gh, both preinstalled, and no
+  # downloaded code. The environment holds the secret and requires the owner's approval.
+  sign:
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: image
+      - name: Sign
+        env:
+          OTA_SIGNING_KEY: ${{ secrets.OTA_SIGNING_KEY }}
+        run: |
+          umask 077
+          k="$RUNNER_TEMP/key.pem"
+          trap 'rm -f "$k"' EXIT
+          printf '%s' "$OTA_SIGNING_KEY" | base64 -d > "$k"
+          python3 tools/sign.py "$k" garage-homekit.bin garage-homekit-signed.bin keys/ota_verify.bin
+          cat VERSION > version.txt
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" garage-homekit-signed.bin version.txt \
+            --title "$GITHUB_REF_NAME" --notes "Signed image $(sha256sum garage-homekit-signed.bin | cut -c1-64)" --latest

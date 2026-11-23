@@ -5,3 +5,4 @@
 #include <esp_http_server.h>
 
 httpd_handle_t ota_start(void);  // NULL on failure; diag.c adds its pages to it
+void ota_reboot(void);           // after a short delay (long in QEMU, see ota.c)

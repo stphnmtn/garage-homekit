@@ -8,6 +8,7 @@ IMG=espressif/idf:$(cat IDF_VERSION)
 # Setup info (salt + verifier, not the code) for the one-time NVS provisioning; a build
 # without it (CI, releases) reads what the device already holds.
 umask 077
+trap 'rm -f main/secrets.h' EXIT  # never left behind for another build to pick up
 security find-generic-password -s garage-homekit-setup -w | python3 tools/setup_info.py main/secrets.h
 rm -rf build/esp-idf/main  # secrets.h is picked up by __has_include, which ninja cannot track
 
@@ -16,7 +17,7 @@ rm -f sdkconfig
 docker run --rm -v "$PWD":/project -w /project "$IMG" idf.py --no-ccache build
 
 mkdir -p "$HOME/.cache"; tmp=$(mktemp -d "$HOME/.cache/garage-key.XXXXXX")  # Docker sees only /Users
-trap 'rm -rf "$tmp"' EXIT
+trap 'rm -rf "$tmp"; rm -f main/secrets.h' EXIT
 security find-generic-password -s garage-ota-signing-key -w | base64 -d > "$tmp/key.pem"
 docker run --rm -v "$PWD":/project -v "$tmp":/k -w /project "$IMG" bash -c '
   espsecure.py extract_public_key --version 1 --keyfile /k/key.pem /k/pub.bin >/dev/null &&

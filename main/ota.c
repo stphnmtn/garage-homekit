@@ -25,6 +25,11 @@ static void reboot_task(void *arg)
     esp_restart();
 }
 
+void ota_reboot(void)
+{
+    xTaskCreate(reboot_task, "reboot", 2048, NULL, 5, NULL);
+}
+
 static esp_err_t fail(httpd_req_t *req, const char *status, const char *msg, esp_ota_handle_t h)
 {
     if (h) {
@@ -79,7 +84,7 @@ static esp_err_t ota_post(httpd_req_t *req)
     }
     ESP_LOGI(TAG, "version %s accepted, rebooting", incoming.version);
     httpd_resp_sendstr(req, "ok, rebooting\n");
-    xTaskCreate(reboot_task, "reboot", 2048, NULL, 5, NULL);
+    ota_reboot();
     return ESP_OK;
 }
 
