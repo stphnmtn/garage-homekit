@@ -1,0 +1,6 @@
+menu "Garage"
+    config GARAGE_QEMU
+        bool "Build for the QEMU emulator (OpenCores Ethernet instead of LAN8720)"
+        default n
+        select ETH_USE_OPENETH
+endmenu

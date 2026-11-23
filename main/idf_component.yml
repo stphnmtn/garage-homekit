@@ -1,0 +1,6 @@
+dependencies:
+  idf: ">=5.5"
+  espressif/json_generator: "^2.1.0"
+  espressif/json_parser: "^2.0.0"
+  espressif/libsodium: "~1.0.20"
+  espressif/mdns: "*"

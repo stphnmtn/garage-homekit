@@ -1,0 +1,8 @@
+# Identical to the table ESPHome 2026.8.1 writes for a 4 MB ESP-IDF build, so an image
+# pushed over ESPHome's OTA lands in a slot this firmware's own OTA understands.
+# Name,    Type, SubType, Offset,   Size
+otadata,   data, ota,     0x9000,   0x2000
+phy_init,  data, phy,     0xB000,   0x1000
+app0,      app,  ota_0,   0x10000,  0x1C0000
+app1,      app,  ota_1,   0x1D0000, 0x1C0000
+nvs,       data, nvs,     0x390000, 0x70000

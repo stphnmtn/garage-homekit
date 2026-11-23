@@ -1,0 +1,38 @@
+CONFIG_IDF_TARGET="esp32"
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# OTA: only images signed with our ECDSA key are accepted (works on every ESP32 revision;
+# RSA needs rev 3). The private key never enters the build: images are signed afterwards.
+CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT=y
+CONFIG_SECURE_SIGNED_APPS_ECDSA_SCHEME=y
+CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT=y
+CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=n
+CONFIG_SECURE_BOOT_VERIFICATION_KEY="keys/ota_verify.bin"
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# No Wi-Fi, no Bluetooth: Ethernet only.
+CONFIG_BT_ENABLED=n
+CONFIG_ESP_WIFI_SOFTAP_SUPPORT=n
+
+# HomeKit setup info (salt + verifier) sits in the main NVS, written once by a local build
+# (main/setup.c); no factory_nvs partition, so the partition table stays unchanged.
+CONFIG_HAP_PLATFORM_DEF_NVS_FACTORY_PARTITION="nvs"
+
+# HomeKit SDK expectations (from its examples).
+# HAP 8 + 2, OTA 2 + 2, mDNS, DHCP: the SDK example's 16 was too tight.
+CONFIG_LWIP_MAX_SOCKETS=24
+CONFIG_LWIP_SO_REUSE=y
+CONFIG_LWIP_MAX_ACTIVE_TCP=12
+CONFIG_LWIP_MAX_LISTENING_TCP=12
+CONFIG_MBEDTLS_HARDWARE_MPI=y
+CONFIG_MDNS_PREDEF_NETIF_ETH=y
+CONFIG_MDNS_PREDEF_NETIF_STA=n
+CONFIG_MDNS_PREDEF_NETIF_AP=n
+
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_ESP_TASK_WDT_PANIC=y
+
+# The event loop runs in app_main and calls into HAP (JSON, notifications): 3.5 KB default is too small.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
